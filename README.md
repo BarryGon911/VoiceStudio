@@ -221,3 +221,45 @@ Thank you to everyone who sends code, reports, translations and ideas. [All cont
 ## License & responsible use
 
 [AGPL-3.0](LICENSE) covers the app, including commercial use under its terms. Model weights, voices and generated output have their own licences, which the Model Manager shows for each model ([inventory](docs/licensing/model-inventory.md)). Clone a voice only with its owner's permission. Details: [LICENSE-NOTICE.md](LICENSE-NOTICE.md).
+
+---
+
+## 📌 Nota de este fork (BarryGon911/VoiceStudio)
+
+Esta sección es propia de este fork y no forma parte de la documentación original del
+proyecto. VoiceStudio es software de terceros — copyright de **Palash Debnath y
+contribuidores**, licencia **AGPL-3.0-only**, mantenido comercialmente por **Yupcha Softwares
+Private Limited**. Este fork no modifica licencia, autoría ni documentación del upstream.
+
+**Origen:** `origin` apuntaba originalmente al repo real (`debpalash/VoiceStudio`) — se creó
+este fork (`gh repo fork debpalash/VoiceStudio`) y se repunteó el remote local para evitar
+cualquier push accidental al repositorio del autor original.
+
+**Remotes configurados:**
+```
+origin    → https://github.com/BarryGon911/VoiceStudio.git   (este fork — lectura/escritura)
+upstream  → https://github.com/debpalash/VoiceStudio.git     (repo original — solo lectura)
+```
+
+### Cómo revisar cambios nuevos del repo original (de tiempo en tiempo)
+
+```bash
+# 1. Traer los commits más recientes del repo original, sin tocar tu rama local
+git fetch upstream main
+
+# 2. Ver si hay commits nuevos que tu fork no tiene todavía
+git log main..upstream/main --oneline
+
+# 3. (Opcional) conteo rápido de diferencias en ambas direcciones
+git rev-list --left-right --count main...upstream/main
+#   formato de salida: <commits solo en tu fork>  <commits solo en upstream>
+
+# 4. Si hay commits nuevos en upstream y quieres traerlos a tu fork:
+git merge upstream/main
+git push origin main
+```
+
+Si el remote `upstream` no existe todavía en tu checkout, agrégalo una sola vez con:
+```bash
+git remote add upstream https://github.com/debpalash/VoiceStudio.git
+```
