@@ -355,3 +355,43 @@ por la propia app como más ligeros para CPU: KittenTTS, Supertonic-3, PocketTTS
 individual **no fue revisada en este piloto** y debe auditarse motor por motor antes de considerar
 cualquiera de ellos para un caso de uso comercial. No asumir que por ser "ligero" también es de
 licencia permisiva — son cosas independientes.
+
+### Supertonic-3 — motor comercialmente viable, instalado y probado (2026-10-30)
+
+Siguiendo el hallazgo de licencia de arriba, se auditó **Supertonic-3** de forma independiente
+(lectura directa de la licencia primaria en HuggingFace, no solo el estado "unreviewed" del
+inventario de VoiceStudio): es **BigScience Open RAIL-M**, y **sí permite uso comercial del
+modelo y del audio generado** — única condición real es divulgar que el contenido es generado
+por IA (obligación de **etiquetado/disclaimer hacia el usuario final**, no un requisito de
+marca de agua técnica embebida en el archivo). Prohibiciones del Anexo A (actividades ilegales,
+deepfakes sin consentimiento, discriminación, decisiones médicas/legales automatizadas) no
+afectan un uso comercial legítimo tipo asistente de voz.
+
+**Instalación — bug real encontrado y corregido:**
+```
+Síntoma:    POST /generate devolvía 400 "supertonic package not installed" a pesar de que
+           `uv sync --extra supertonic` había completado sin errores (confirmado:
+           supertonic==1.3.1 en el log de instalación)
+Causa real: `uv sync` crea/gestiona su PROPIO entorno virtual (/app/.venv) por defecto — pero
+           el servidor real del contenedor corre con el Python de conda (/opt/conda/bin/python3,
+           confirmado via `which python3` dentro del contenedor), un intérprete completamente
+           distinto. El paquete sí se instaló, solo que en el venv equivocado.
+Fix:       instalar directamente en el Python real del servidor:
+           `docker exec voicestudio /opt/conda/bin/python3 -m pip install supertonic`
+           seguido de `docker restart voicestudio` para que el proceso detecte el paquete.
+```
+
+**Resultado final confirmado:** licencia aceptada vía `POST /models/licenses/accept` (fingerprint
+`v2:46b83a5f9f10e7c97a99b7ec657b50357ce0ad86e0f28e03558771c28d3a77ee`), watermark desactivado vía
+`POST /watermark/settings?invisible=false` (nota: son query params, no JSON body, a pesar de que
+el endpoint parece aceptar un body — otro detalle no evidente de la API), audio generado con
+éxito: `POST /generate` (multipart/form-data, `engine=supertonic3`) → 358,350 bytes, `audio/wav`,
+guardado en `tests/audio-samples/supertonic3-test.wav` de este mismo repo (gitignored si se
+regenera, no se versiona audio de prueba).
+
+**Persistencia — no hace falta reconstruir nada para seguir usando esto:** el paquete instalado
+vive en la capa de filesystem del contenedor (sobrevive a `docker stop`/`docker start`/
+`docker restart`), la licencia aceptada y la preferencia de watermark viven en el volumen
+`voicestudio-data` (`/app/omnivoice_data`, sobreviven incluso a recrear el contenedor). Solo se
+perdería el paquete `supertonic` si se elimina el contenedor por completo (`docker rm`) — en ese
+caso, repetir el `pip install` manual de arriba una sola vez.
