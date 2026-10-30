@@ -231,6 +231,13 @@ proyecto. VoiceStudio es software de terceros — copyright de **Palash Debnath 
 contribuidores**, licencia **AGPL-3.0-only**, mantenido comercialmente por **Yupcha Softwares
 Private Limited**. Este fork no modifica licencia, autoría ni documentación del upstream.
 
+> 🔴 **PROHIBIDO `docker rm voicestudio`** (regla del dueño, 2026-10-30) — el contenedor local
+> `voicestudio` tiene el motor Supertonic-3 instalado manualmente (fuera de lo que trae la
+> imagen base), su licencia OpenRAIL-M ya aceptada y el watermark técnico ya desactivado — ver
+> sección "Supertonic-3 — motor comercialmente viable" más abajo. `docker stop`/`docker start`/
+> `docker restart` son seguros (todo sobrevive); solo `docker rm` destruye la capa de filesystem
+> donde vive el paquete instalado manualmente, obligando a repetir el fix documentado abajo.
+
 **Origen:** `origin` apuntaba originalmente al repo real (`debpalash/VoiceStudio`) — se creó
 este fork (`gh repo fork debpalash/VoiceStudio`) y se repunteó el remote local para evitar
 cualquier push accidental al repositorio del autor original.

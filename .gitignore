@@ -80,6 +80,7 @@ omnivoice_data/
 *.db-wal
 *.log
 *.wav
+/tests/audio-samples/
 
 # ─────────────────────────────────────────────────────────────────────────
 #  Frozen regression fixture (GATE-01) — explicit allow-list.
