@@ -128,6 +128,128 @@ Direct repo edits are authorized (owner decision, 2026-07-08). The GSD command g
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
 
+## 🔌 Integración con ACS — VoiceStudio como API interna
+
+VoiceStudio es el **único** componente ACS autorizado para voz (TTS, voice cloning, dubbing, dictation). Los demás productos ACS (VerbaVault, Chapis-Bot, etc.) lo **consumen vía HTTP REST** — nunca duplican código de voz.
+
+### Patrón de integración
+
+```
+VerbaVault (consumidor)
+    │
+    │  POST http://voicestudio-host:7999/api/v1/tts
+    │  POST http://voicestudio-host:7999/api/v1/clone
+    │  POST http://voicestudio-host:7999/api/v1/dub
+    ▼
+VoiceStudio FastAPI backend (puerto 7999 local / Docker)
+```
+
+**Regla de oro:** VerbaVault lee audio → VoiceStudio genera voz. Nunca al revés. Nunca duplicar modelos de TTS en VerbaVault.
+
+### Exponer el backend de VoiceStudio como API consumible
+
+VoiceStudio ya corre un FastAPI en el backend. Para exponerlo a otros contenedores ACS en la misma máquina:
+
+**1. Docker — red compartida ACS**
+
+En el `docker-compose.yml` de VoiceStudio, agrega la red externa ACS:
+
+```yaml
+services:
+  backend:
+    # ... config existente ...
+    networks:
+      - acs_internal
+
+networks:
+  acs_internal:
+    external: true
+    name: acs_internal
+```
+
+Crear la red si no existe:
+```powershell
+docker network create acs_internal
+```
+
+En VerbaVault, mismo bloque de red + variable de entorno:
+```yaml
+# docker-compose.yml de VerbaVault
+services:
+  api:
+    environment:
+      VOICESTUDIO_API_URL: http://voicestudio-backend:7999
+    networks:
+      - acs_internal
+
+networks:
+  acs_internal:
+    external: true
+    name: acs_internal
+```
+
+**2. Endpoints mínimos a implementar en VoiceStudio**
+
+| Endpoint | Método | Descripción |
+|---|---|---|
+| `/api/v1/tts` | POST | Text-to-speech; body: `{text, voice_id, language}` → retorna audio WAV/MP3 |
+| `/api/v1/voices` | GET | Lista de voces disponibles (clonadas + built-in) |
+| `/api/v1/clone` | POST | Clonar voz; body: `{name, audio_file}` → retorna `voice_id` |
+| `/api/v1/dub` | POST | Dubbing de video; body: `{video_url, source_lang, target_lang}` → retorna video |
+| `/api/v1/health` | GET | Health check para consumidores externos |
+
+Los endpoints de VoiceStudio ya existen en `backend/api/routers/` — solo se necesita asegurar que estén expuestos en la red `acs_internal` y documentados en `backend/api/openapi_extra.py` para generación automática (`uv run python scripts/export_openapi.py`).
+
+**3. Autenticación entre servicios ACS**
+
+Usar un shared secret vía variable de entorno `ACS_INTERNAL_TOKEN` (no exponerlo en logs ni en respuestas):
+
+```python
+# En VoiceStudio: validar header en cada endpoint ACS
+X-ACS-Token: <ACS_INTERNAL_TOKEN>
+
+# En VerbaVault: enviar en cada request
+headers = {"X-ACS-Token": os.environ["ACS_INTERNAL_TOKEN"]}
+```
+
+**4. Acceso desde VerbaVault**
+
+```python
+# backend/app/services/voice/voicestudio_client.py en VerbaVault
+import httpx
+import os
+
+VOICESTUDIO_URL = os.environ.get("VOICESTUDIO_API_URL", "http://localhost:7999")
+
+async def synthesize_speech(text: str, voice_id: str, language: str = "es") -> bytes:
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{VOICESTUDIO_URL}/api/v1/tts",
+            json={"text": text, "voice_id": voice_id, "language": language},
+            headers={"X-ACS-Token": os.environ["ACS_INTERNAL_TOKEN"]},
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        return resp.content  # bytes de audio
+```
+
+### Recuperación post-incidente docker prune 2026-11-20
+
+Claude ejecutó `docker system prune -af --volumes` el 2026-11-20. Destruyó el contenedor e imagen de VoiceStudio.
+
+**Para recuperar:**
+```powershell
+cd "E:\GitHub-Repositories\Agent-Coworker-Suite\VoiceStudio"
+docker compose build
+docker compose up -d
+```
+
+Los datos de usuario en `omnivoice_data/` son bind-mounts en disco — **NO son volúmenes nombrados** → sobrevivieron al prune. Solo la imagen necesita rebuild.
+
+Ver protocolo completo: `~/.claude/CLAUDE.md` → sección PROTOCOLO DOCKER.
+
+---
+
 ## Agent skills
 
 ### Issue tracker
