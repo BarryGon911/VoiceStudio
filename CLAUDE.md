@@ -130,7 +130,12 @@ Direct repo edits are authorized (owner decision, 2026-07-08). The GSD command g
 
 ## 🔌 Integración con ACS — VoiceStudio como API interna
 
-VoiceStudio es el **único** componente ACS autorizado para voz (TTS, voice cloning, dubbing, dictation). Los demás productos ACS (VerbaVault, Chapis-Bot, etc.) lo **consumen vía HTTP REST** — nunca duplican código de voz.
+VoiceStudio es el **fallback oficial de voz para toda la Suite ACS** (TTS, voice cloning, dubbing, dictation). El patrón dual de voz ACS es:
+
+- **Opción 1:** ElevenLabs API (BYOK por tenant) — calidad premium, baja latencia, sin GPU local
+- **Fallback:** VoiceStudio API puerto 7999 (este repo) — offline, costo cero, NDA-safe, Supertonic-3
+
+Los demás productos ACS **consumen vía HTTP REST** — nunca duplican modelos de voz.
 
 ### Patrón de integración
 
@@ -144,7 +149,7 @@ VerbaVault (consumidor)
 VoiceStudio FastAPI backend (puerto 7999 local / Docker)
 ```
 
-**Regla de oro:** VerbaVault lee audio → VoiceStudio genera voz. Nunca al revés. Nunca duplicar modelos de TTS en VerbaVault.
+**Regla de oro:** cualquier repo ACS que necesite voz → primero ElevenLabs BYOK, si no hay key → VoiceStudio API. Nunca duplicar modelos TTS en ningún repo. VerbaVault lee audio → VoiceStudio/ElevenLabs genera voz, nunca al revés.
 
 ### Exponer el backend de VoiceStudio como API consumible
 
