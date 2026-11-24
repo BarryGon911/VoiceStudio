@@ -1,3 +1,7 @@
+## 🔴 REMOTOS GIT — REGLA MANDATORY
+- Todo push va solo a `origin` (fork BarryGon911/VoiceStudio). **NUNCA** escribir en `upstream` (debpalash/VoiceStudio): ni push, ni merge a su rama, ni rebase. Solo `git fetch upstream`.
+- Trabajo sobre el código upstream → rama aparte (`review/upstream-*`), nunca sobre `main`.
+
 ## Active desktop: Electron only
 
 Electron (`electron/`) is the only desktop and web UI. The Tauri shell and legacy
