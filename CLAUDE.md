@@ -142,9 +142,8 @@ Los demás productos ACS **consumen vía HTTP REST** — nunca duplican modelos 
 ```
 VerbaVault (consumidor)
     │
-    │  POST http://voicestudio-host:7999/api/v1/tts
-    │  POST http://voicestudio-host:7999/api/v1/clone
-    │  POST http://voicestudio-host:7999/api/v1/dub
+    │  POST http://voicestudio-host:7999/v1/audio/speech  (TTS — OpenAI-compat)
+    │  POST http://voicestudio-host:7999/v1/audio/transcriptions  (ASR)
     ▼
 VoiceStudio FastAPI backend (puerto 7999 local / Docker)
 ```
@@ -193,49 +192,40 @@ networks:
     name: acs_internal
 ```
 
-**2. Endpoints mínimos a implementar en VoiceStudio**
+**2. Endpoints disponibles en VoiceStudio (verificados en `backend/api/routers/`)**
 
 | Endpoint | Método | Descripción |
 |---|---|---|
-| `/api/v1/tts` | POST | Text-to-speech; body: `{text, voice_id, language}` → retorna audio WAV/MP3 |
-| `/api/v1/voices` | GET | Lista de voces disponibles (clonadas + built-in) |
-| `/api/v1/clone` | POST | Clonar voz; body: `{name, audio_file}` → retorna `voice_id` |
-| `/api/v1/dub` | POST | Dubbing de video; body: `{video_url, source_lang, target_lang}` → retorna video |
-| `/api/v1/health` | GET | Health check para consumidores externos |
-
-Los endpoints de VoiceStudio ya existen en `backend/api/routers/` — solo se necesita asegurar que estén expuestos en la red `acs_internal` y documentados en `backend/api/openapi_extra.py` para generación automática (`uv run python scripts/export_openapi.py`).
+| `/v1/audio/speech` | POST | TTS — OpenAI-compat; body: `{model, input, voice, response_format}` → audio |
+| `/v1/audio/transcriptions` | POST | ASR — OpenAI-compat; multipart `file` + `model` |
+| `/v1/models` | GET | Lista modelos/engines disponibles |
+| `/health` | GET | Health check para consumidores externos |
 
 **3. Autenticación entre servicios ACS**
 
-Usar un shared secret vía variable de entorno `ACS_INTERNAL_TOKEN` (no exponerlo en logs ni en respuestas):
+VoiceStudio usa su propio `OMNIVOICE_API_KEY` como bearer token. En modo Docker, requiere `OMNIVOICE_SERVER_MODE=1`:
 
-```python
-# En VoiceStudio: validar header en cada endpoint ACS
-X-ACS-Token: <ACS_INTERNAL_TOKEN>
-
-# En VerbaVault: enviar en cada request
-headers = {"X-ACS-Token": os.environ["ACS_INTERNAL_TOKEN"]}
+```
+Authorization: Bearer <OMNIVOICE_API_KEY>
 ```
 
-**4. Acceso desde VerbaVault**
+**4. Acceso desde VerbaVault (contrato real)**
 
 ```python
 # backend/app/services/voice/voicestudio_client.py en VerbaVault
-import httpx
-import os
+import httpx, os
 
-VOICESTUDIO_URL = os.environ.get("VOICESTUDIO_API_URL", "http://localhost:7999")
+VOICESTUDIO_BASE_URL = os.environ.get("VOICESTUDIO_BASE_URL", "http://voicestudio-backend:7999")
 
-async def synthesize_speech(text: str, voice_id: str, language: str = "es") -> bytes:
-    async with httpx.AsyncClient() as client:
+async def synthesize_speech(text: str, voice_id: str, response_format: str = "wav") -> bytes:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
-            f"{VOICESTUDIO_URL}/api/v1/tts",
-            json={"text": text, "voice_id": voice_id, "language": language},
-            headers={"X-ACS-Token": os.environ["ACS_INTERNAL_TOKEN"]},
-            timeout=60.0,
+            f"{VOICESTUDIO_BASE_URL}/v1/audio/speech",
+            headers={"Authorization": f"Bearer {os.environ['OMNIVOICE_API_KEY']}"},
+            json={"model": "omnivoice", "input": text, "voice": voice_id, "response_format": response_format},
         )
         resp.raise_for_status()
-        return resp.content  # bytes de audio
+        return resp.content
 ```
 
 ### Recuperación post-incidente docker prune 2026-11-20
