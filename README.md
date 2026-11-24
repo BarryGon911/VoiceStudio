@@ -568,3 +568,184 @@ Thank you to everyone who sends code, reports, translations and ideas. [All cont
 **Disclaimer**
 
 VoiceStudio users are strictly prohibited from using it for unauthorized voice cloning, voice impersonation, fraud, scams, or any other illegal or unethical activities. All users shall ensure full compliance with applicable local laws, regulations, and ethical standards. The developers assume no liability for any misuse of VoiceStudio and advocate for responsible AI development and use, encouraging the community to uphold safety and ethical principles in AI research and applications.
+
+---
+
+## 📌 Nota de este fork (BarryGon911/VoiceStudio)
+
+Esta sección es propia de este fork y no forma parte de la documentación original del
+proyecto. VoiceStudio es software de terceros — copyright de **Palash Debnath y
+contribuidores**, licencia **AGPL-3.0-only**, mantenido comercialmente por **Yupcha Softwares
+Private Limited**. Este fork no modifica licencia, autoría ni documentación del upstream.
+
+> 🔴 **PROHIBIDO `docker rm voicestudio`** (regla del dueño, 2026-10-30) — el contenedor local
+> `voicestudio` tiene el motor Supertonic-3 instalado manualmente (fuera de lo que trae la
+> imagen base), su licencia OpenRAIL-M ya aceptada y el watermark técnico ya desactivado — ver
+> sección "Supertonic-3 — motor comercialmente viable" más abajo. `docker stop`/`docker start`/
+> `docker restart` son seguros (todo sobrevive); solo `docker rm` destruye la capa de filesystem
+> donde vive el paquete instalado manualmente, obligando a repetir el fix documentado abajo.
+
+**Origen:** `origin` apuntaba originalmente al repo real (`debpalash/VoiceStudio`) — se creó
+este fork (`gh repo fork debpalash/VoiceStudio`) y se repunteó el remote local para evitar
+cualquier push accidental al repositorio del autor original.
+
+**Remotes configurados:**
+```
+origin    → https://github.com/BarryGon911/VoiceStudio.git   (este fork — lectura/escritura)
+upstream  → https://github.com/debpalash/VoiceStudio.git     (repo original — solo lectura)
+```
+
+### Cómo revisar cambios nuevos del repo original (de tiempo en tiempo)
+
+```bash
+# 1. Traer los commits más recientes del repo original, sin tocar tu rama local
+git fetch upstream main
+
+# 2. Ver si hay commits nuevos que tu fork no tiene todavía
+git log main..upstream/main --oneline
+
+# 3. (Opcional) conteo rápido de diferencias en ambas direcciones
+git rev-list --left-right --count main...upstream/main
+#   formato de salida: <commits solo en tu fork>  <commits solo en upstream>
+
+# 4. Si hay commits nuevos en upstream y quieres traerlos a tu fork:
+git merge upstream/main
+git push origin main
+```
+
+Si el remote `upstream` no existe todavía en tu checkout, agrégalo una sola vez con:
+```bash
+git remote add upstream https://github.com/debpalash/VoiceStudio.git
+```
+
+---
+
+## 📌 Addendum — panorama técnico real (análisis 2026-10-29, por BarryGon911)
+
+Investigación propia del alcance real del proyecto, útil para decidir si/cómo consumirlo desde
+otro repo (ej. Agent-Coworker vía BYDMCP). No es documentación oficial del proyecto — ver nota
+de fork arriba.
+
+### Qué hace (mucho más que "clonación de voz")
+
+Es una suite de producción de audio/video con IA todo-en-uno, con ~40 routers de API agrupables en:
+
+1. **Voz** — TTS multi-motor (14+ engines en Mac: Kokoro, Dia, Qwen3-TTS, Chatterbox, Higgs-Audio…),
+   clonación de voz (`profiles`/`archetypes`/`personas`), voice-to-voice (`voice_convert`),
+   watermarking anti-deepfake (`watermark`)
+2. **Doblaje/traducción** — pipeline completo transcribe→traduce→re-genera voz→re-sincroniza
+   (`dub_core`, `dub_generate`, `dub_translate`, `dub_export`, `sonitranslate`)
+3. **Transcripción/dictado** — WhisperX + faster-whisper (alineación ±10-30ms), dictado en vivo
+   por WebSocket (`dictation`, `capture`, `capture_ws`)
+4. **Contenido largo** — audiolibros (`audiobook`), narrativa (`stories`, `longform_jobs`),
+   gestión de proyectos (`project_bundles`, `projects`, `exports`)
+5. **Integraciones** — Twilio (`telephony_twilio`), API compatible con OpenAI (`openai_compat`),
+   marketplace/cloud sync de voces (`marketplace`, `cloud_sync`, `community`), **MCP server nativo**
+   (`backend/mcp_server.py` + `mcp_bindings`) — ya expone tools (`generate_speech`, `clone_voice`,
+   `transcribe`, `list_voices`, `list_languages`, `list_personalities`, `check_health`) y resources
+   (`voice://{profile_id}`, `history://recent`) vía stdio o SSE
+6. **Auxiliares** — separación de pistas (`demucs`), pronunciación/glosario, herramientas de media
+
+### Tech-stack real
+
+```
+Monorepo:    Bun workspace (bun 1.4.2) — no npm/yarn
+Desktop UI:  Electron + React (frontend/ compilado, servido por el backend)
+Backend:     Python + FastAPI (backend/main.py, ~113 KB — módulo grande)
+IA/ML:       PyTorch 2.8 + torchaudio/torchvision, Transformers 5.10+
+ASR:         WhisperX + faster-whisper (CTranslate2), Parakeet (solo Mac/MLX)
+TTS:         omnivoice/ (paquete propio, Apache-2.0) + motores de terceros con
+             licencias separadas por modelo (CC-BY-NC, Llama community, etc.
+             — no relicenciadas por el proyecto, ver LICENSE-NOTICE.md)
+Audio DSP:   pedalboard (efectos), demucs (separación), soundfile
+Video:       ffmpeg (vía imageio-ffmpeg)
+DB:          Alembic + SQLite (persistido en el volumen /app/omnivoice_data)
+Pkg mgr:     uv (Python) — no pip puro
+Empaquetado: Docker multi-stage oficial (`deploy/Dockerfile` + `deploy/docker-compose.yml`),
+             perfiles `cpu` / `gpu` (NVIDIA) / `rocm` (AMD) — imagen prebuilt en
+             `ghcr.io/debpalash/voicestudio:stable` (~4+ GB), sin necesidad de compilar
+Licencia:    AGPL-3.0-only (app) + Apache-2.0 (omnivoice/) + licencias independientes
+             por cada modelo de pesos descargado
+```
+
+### Viabilidad de prueba sin costo (confirmado 2026-10-29)
+
+El perfil `cpu` del compose oficial corre sin GPU, sin API keys de pago, con imagen ya construida
+en GHCR — cero fricción para un piloto local vía `docker run` contra Docker Desktop. Único costo
+real es tiempo de descarga (~4GB+) y latencia de inferencia más alta que con GPU. Ver hallazgo
+anterior en este mismo README sobre la vía de consumo recomendada (MCP nativo, "tal cual", sin
+modificar código — evita obligaciones de copyleft de AGPL-3.0).
+
+### Piloto E2E completado (2026-10-29) — resultado real, no estimado
+
+Se corrió un piloto completo vía Docker (`docker run`, perfil CPU, sin GPU) + automatización
+Playwright (login → wizard de setup → aceptar licencias de modelo → generar voz real) contra
+el contenedor local. Resultados:
+
+```
+Hardware de prueba:  WSL2, 7.7 GB RAM asignada (de 16 GB físicos — WSL2 limita por defecto a
+                     ~50%, no es el RAM total del equipo), sin GPU detectada/usada
+Paquete instalado:   "Rápido" (2.7 GB) — VoiceStudio TTS (OmniVoice) + Whisper base + Whisper Tiny
+Latencia real TTS:   audio de 7.5s generado en 40.0s de render (~5.3× tiempo real en CPU puro)
+                     — utilizable para generación asíncrona/batch, NO para conversación en vivo
+Calidad de salida:   24 kHz
+```
+
+**Hallazgo crítico de licencia — bloquea el caso de uso comercial tal como estaba planteado:**
+el motor TTS principal instalado (`k2-fsa/OmniVoice`) requiere aceptar explícitamente una
+licencia **CC-BY-NC** (+ Higgs Audio 2 + Meta Llama 3 como dependencias del pipeline) antes de
+poder generar cualquier audio. Esa licencia, según la propia UI del producto:
+
+```
+Uso comercial del modelo:          NO PERMITIDO
+Uso comercial del audio generado:  NO PERMITIDO
+Alcance declarado:                 "Solo uso personal y de investigación"
+```
+
+Implicación directa: **el motor OmniVoice no sirve, tal cual, para ningún caso de uso comercial
+de ACS** (ej. "Voz clonada" ENTERPRISE+) — ni el modelo ni el audio que produce pueden usarse en
+un contexto remunerado. El Model Catalogue de VoiceStudio trae otros motores TTS (mencionados
+por la propia app como más ligeros para CPU: KittenTTS, Supertonic-3, PocketTTS) — su licencia
+individual **no fue revisada en este piloto** y debe auditarse motor por motor antes de considerar
+cualquiera de ellos para un caso de uso comercial. No asumir que por ser "ligero" también es de
+licencia permisiva — son cosas independientes.
+
+### Supertonic-3 — motor comercialmente viable, instalado y probado (2026-10-30)
+
+Siguiendo el hallazgo de licencia de arriba, se auditó **Supertonic-3** de forma independiente
+(lectura directa de la licencia primaria en HuggingFace, no solo el estado "unreviewed" del
+inventario de VoiceStudio): es **BigScience Open RAIL-M**, y **sí permite uso comercial del
+modelo y del audio generado** — única condición real es divulgar que el contenido es generado
+por IA (obligación de **etiquetado/disclaimer hacia el usuario final**, no un requisito de
+marca de agua técnica embebida en el archivo). Prohibiciones del Anexo A (actividades ilegales,
+deepfakes sin consentimiento, discriminación, decisiones médicas/legales automatizadas) no
+afectan un uso comercial legítimo tipo asistente de voz.
+
+**Instalación — bug real encontrado y corregido:**
+```
+Síntoma:    POST /generate devolvía 400 "supertonic package not installed" a pesar de que
+           `uv sync --extra supertonic` había completado sin errores (confirmado:
+           supertonic==1.3.1 en el log de instalación)
+Causa real: `uv sync` crea/gestiona su PROPIO entorno virtual (/app/.venv) por defecto — pero
+           el servidor real del contenedor corre con el Python de conda (/opt/conda/bin/python3,
+           confirmado via `which python3` dentro del contenedor), un intérprete completamente
+           distinto. El paquete sí se instaló, solo que en el venv equivocado.
+Fix:       instalar directamente en el Python real del servidor:
+           `docker exec voicestudio /opt/conda/bin/python3 -m pip install supertonic`
+           seguido de `docker restart voicestudio` para que el proceso detecte el paquete.
+```
+
+**Resultado final confirmado:** licencia aceptada vía `POST /models/licenses/accept` (fingerprint
+`v2:46b83a5f9f10e7c97a99b7ec657b50357ce0ad86e0f28e03558771c28d3a77ee`), watermark desactivado vía
+`POST /watermark/settings?invisible=false` (nota: son query params, no JSON body, a pesar de que
+el endpoint parece aceptar un body — otro detalle no evidente de la API), audio generado con
+éxito: `POST /generate` (multipart/form-data, `engine=supertonic3`) → 358,350 bytes, `audio/wav`,
+guardado en `tests/audio-samples/supertonic3-test.wav` de este mismo repo (gitignored si se
+regenera, no se versiona audio de prueba).
+
+**Persistencia — no hace falta reconstruir nada para seguir usando esto:** el paquete instalado
+vive en la capa de filesystem del contenedor (sobrevive a `docker stop`/`docker start`/
+`docker restart`), la licencia aceptada y la preferencia de watermark viven en el volumen
+`voicestudio-data` (`/app/omnivoice_data`, sobreviven incluso a recrear el contenedor). Solo se
+perdería el paquete `supertonic` si se elimina el contenedor por completo (`docker rm`) — en ese
+caso, repetir el `pip install` manual de arriba una sola vez.

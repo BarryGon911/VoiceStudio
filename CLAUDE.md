@@ -1,3 +1,7 @@
+## 🔴 REMOTOS GIT — REGLA MANDATORY
+- Todo push va solo a `origin` (fork BarryGon911/VoiceStudio). **NUNCA** escribir en `upstream` (debpalash/VoiceStudio): ni push, ni merge a su rama, ni rebase. Solo `git fetch upstream`.
+- Trabajo sobre el código upstream → rama aparte (`review/upstream-*`), nunca sobre `main`.
+
 ## Active desktop: Electron only
 
 Electron (`electron/`) is the only desktop and web UI. The Tauri shell and legacy
@@ -133,6 +137,123 @@ Direct repo edits are authorized (owner decision, 2026-07-08). The GSD command g
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## 🔌 Integración con ACS — VoiceStudio como API interna
+
+VoiceStudio es el **fallback oficial de voz para toda la Suite ACS** (TTS, voice cloning, dubbing, dictation). El patrón dual de voz ACS es:
+
+- **Opción 1:** ElevenLabs API (BYOK por tenant) — calidad premium, baja latencia, sin GPU local
+- **Fallback:** VoiceStudio API puerto 7999 (este repo) — offline, costo cero, NDA-safe, Supertonic-3
+
+Los demás productos ACS **consumen vía HTTP REST** — nunca duplican modelos de voz.
+
+### Patrón de integración
+
+```
+VerbaVault (consumidor)
+    │
+    │  POST http://voicestudio-host:7999/v1/audio/speech  (TTS — OpenAI-compat)
+    │  POST http://voicestudio-host:7999/v1/audio/transcriptions  (ASR)
+    ▼
+VoiceStudio FastAPI backend (puerto 7999 local / Docker)
+```
+
+**Regla de oro:** cualquier repo ACS que necesite voz → primero ElevenLabs BYOK, si no hay key → VoiceStudio API. Nunca duplicar modelos TTS en ningún repo. VerbaVault lee audio → VoiceStudio/ElevenLabs genera voz, nunca al revés.
+
+### Exponer el backend de VoiceStudio como API consumible
+
+VoiceStudio ya corre un FastAPI en el backend. Para exponerlo a otros contenedores ACS en la misma máquina:
+
+**1. Docker — red compartida ACS**
+
+En el `docker-compose.yml` de VoiceStudio, agrega la red externa ACS:
+
+```yaml
+services:
+  backend:
+    # ... config existente ...
+    networks:
+      - acs_internal
+
+networks:
+  acs_internal:
+    external: true
+    name: acs_internal
+```
+
+Crear la red si no existe:
+```powershell
+docker network create acs_internal
+```
+
+En VerbaVault, mismo bloque de red + variable de entorno:
+```yaml
+# docker-compose.yml de VerbaVault
+services:
+  api:
+    environment:
+      VOICESTUDIO_API_URL: http://voicestudio-backend:7999
+    networks:
+      - acs_internal
+
+networks:
+  acs_internal:
+    external: true
+    name: acs_internal
+```
+
+**2. Endpoints disponibles en VoiceStudio (verificados en `backend/api/routers/`)**
+
+| Endpoint | Método | Descripción |
+|---|---|---|
+| `/v1/audio/speech` | POST | TTS — OpenAI-compat; body: `{model, input, voice, response_format}` → audio |
+| `/v1/audio/transcriptions` | POST | ASR — OpenAI-compat; multipart `file` + `model` |
+| `/v1/models` | GET | Lista modelos/engines disponibles |
+| `/health` | GET | Health check para consumidores externos |
+
+**3. Autenticación entre servicios ACS**
+
+VoiceStudio usa su propio `OMNIVOICE_API_KEY` como bearer token. En modo Docker, requiere `OMNIVOICE_SERVER_MODE=1`:
+
+```
+Authorization: Bearer <OMNIVOICE_API_KEY>
+```
+
+**4. Acceso desde VerbaVault (contrato real)**
+
+```python
+# backend/app/services/voice/voicestudio_client.py en VerbaVault
+import httpx, os
+
+VOICESTUDIO_BASE_URL = os.environ.get("VOICESTUDIO_BASE_URL", "http://voicestudio-backend:7999")
+
+async def synthesize_speech(text: str, voice_id: str, response_format: str = "wav") -> bytes:
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{VOICESTUDIO_BASE_URL}/v1/audio/speech",
+            headers={"Authorization": f"Bearer {os.environ['OMNIVOICE_API_KEY']}"},
+            json={"model": "omnivoice", "input": text, "voice": voice_id, "response_format": response_format},
+        )
+        resp.raise_for_status()
+        return resp.content
+```
+
+### Recuperación post-incidente docker prune 2026-11-20
+
+Claude ejecutó `docker system prune -af --volumes` el 2026-11-20. Destruyó el contenedor e imagen de VoiceStudio.
+
+**Para recuperar:**
+```powershell
+cd "E:\GitHub-Repositories\Agent-Coworker-Suite\VoiceStudio"
+docker compose build
+docker compose up -d
+```
+
+Los datos de usuario en `omnivoice_data/` son bind-mounts en disco — **NO son volúmenes nombrados** → sobrevivieron al prune. Solo la imagen necesita rebuild.
+
+Ver protocolo completo: `~/.claude/CLAUDE.md` → sección PROTOCOLO DOCKER.
+
+---
 
 ## Agent skills
 
